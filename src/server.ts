@@ -50,13 +50,26 @@ function numberEnv(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function normalizeCalendarUrl(url: string): string {
+  if (url.startsWith("webcal://")) {
+    return `https://${url.slice("webcal://".length)}`;
+  }
+
+  return url;
+}
+
 function getSources(): CalendarSource[] {
   const parsed = JSON.parse(requiredEnv("CALENDARS_JSON")) as CalendarSource[];
 
-  return parsed.filter((source) => {
-    if (!source.name || !source.url || !source.privacy) return false;
-    return ["full", "busy", "hidden"].includes(source.privacy);
-  });
+  return parsed
+    .filter((source) => {
+      if (!source.name || !source.url || !source.privacy) return false;
+      return ["full", "busy", "hidden"].includes(source.privacy);
+    })
+    .map((source) => ({
+      ...source,
+      url: normalizeCalendarUrl(source.url)
+    }));
 }
 
 function dateRange() {
@@ -74,12 +87,12 @@ function overlapsRange(start: Date, end: Date, from: Date, to: Date): boolean {
   return start <= to && end >= from;
 }
 
-async function fetchIcs(url: string): Promise<string> {
+async function fetchIcs(source: CalendarSource): Promise<string> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15_000);
 
   try {
-    const response = await fetch(url, {
+    const response = await fetch(source.url, {
       signal: controller.signal,
       headers: {
         "user-agent": "calendar-merge/0.1"
@@ -87,10 +100,13 @@ async function fetchIcs(url: string): Promise<string> {
     });
 
     if (!response.ok) {
-      throw new Error(`Calendar fetch failed with ${response.status}`);
+      throw new Error(`Calendar "${source.name}" failed with HTTP ${response.status}`);
     }
 
     return await response.text();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown fetch error";
+    throw new Error(`Calendar "${source.name}" could not be fetched: ${message}`);
   } finally {
     clearTimeout(timeout);
   }
@@ -150,7 +166,7 @@ function expandEvent(
 async function loadEvents(source: CalendarSource): Promise<CalendarEvent[]> {
   if (source.privacy === "hidden") return [];
 
-  const raw = await fetchIcs(source.url);
+  const raw = await fetchIcs(source);
   const parsed = ical.sync.parseICS(raw);
   const { from, to } = dateRange();
 
