@@ -1,10 +1,23 @@
 import ical from "node-ical";
+import { createHash } from "node:crypto";
 import { getDateRange } from "./config.js";
 import { fetchIcs } from "./fetchIcs.js";
 import type { CalendarEvent, CalendarSource, DateRange } from "./types.js";
 
 function overlapsRange(start: Date, end: Date, range: DateRange): boolean {
   return start <= range.to && end >= range.from;
+}
+
+function eventId(source: CalendarSource, event: ical.VEvent, start: Date, end: Date): string {
+  const stableInput = [
+    source.name,
+    event.uid ?? "",
+    event.summary ?? "",
+    start.toISOString(),
+    end.toISOString()
+  ].join("|");
+
+  return createHash("sha256").update(stableInput).digest("hex");
 }
 
 function expandEvent(
@@ -17,14 +30,13 @@ function expandEvent(
   }
 
   const durationMs = event.end.getTime() - event.start.getTime();
-  const baseId = event.uid ?? `${source.name}-${event.start.toISOString()}-${event.summary ?? "event"}`;
 
   if (!event.rrule) {
     if (!overlapsRange(event.start, event.end, range)) return [];
 
     return [
       {
-        id: baseId,
+        id: eventId(source, event, event.start, event.end),
         sourceName: source.name,
         privacy: source.privacy,
         start: event.start,
@@ -45,27 +57,44 @@ function expandEvent(
   return event.rrule
     .between(range.from, range.to, true)
     .filter((start) => !exdates.has(start.toISOString().slice(0, 10)))
-    .map((start, index) => ({
-      id: `${baseId}-${index}-${start.toISOString()}`,
-      sourceName: source.name,
-      privacy: source.privacy,
-      start,
-      end: new Date(start.getTime() + durationMs),
-      summary: event.summary,
-      description: event.description,
-      location: event.location
-    }));
+    .map((start) => {
+      const end = new Date(start.getTime() + durationMs);
+
+      return {
+        id: eventId(source, event, start, end),
+        sourceName: source.name,
+        privacy: source.privacy,
+        start,
+        end,
+        summary: event.summary,
+        description: event.description,
+        location: event.location
+      };
+    });
+}
+
+function blocks(raw: string, component: string): string[] {
+  const pattern = new RegExp(`BEGIN:${component}[\\s\\S]*?END:${component}`, "g");
+  return raw.match(pattern) ?? [];
+}
+
+function parseEvents(raw: string): ical.VEvent[] {
+  const timezoneBlocks = blocks(raw, "VTIMEZONE").join("\n");
+
+  return blocks(raw, "VEVENT").flatMap((eventBlock) => {
+    const parsed = ical.sync.parseICS(
+      ["BEGIN:VCALENDAR", timezoneBlocks, eventBlock, "END:VCALENDAR"].join("\n")
+    );
+
+    return Object.values(parsed).filter((entry): entry is ical.VEvent => entry.type === "VEVENT");
+  });
 }
 
 export async function loadEvents(source: CalendarSource): Promise<CalendarEvent[]> {
   if (source.privacy === "hidden") return [];
 
   const raw = await fetchIcs(source);
-  const parsed = ical.sync.parseICS(raw);
   const range = getDateRange();
 
-  return Object.values(parsed).flatMap((entry) => {
-    if (entry.type !== "VEVENT") return [];
-    return expandEvent(entry, source, range);
-  });
+  return parseEvents(raw).flatMap((event) => expandEvent(event, source, range));
 }
