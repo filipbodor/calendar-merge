@@ -1,5 +1,4 @@
 import icalGenerator, { ICalCalendarMethod } from "ical-generator";
-import { getCalendarName } from "./config.js";
 import type { CalendarEvent } from "./types.js";
 
 function visibleSummary(event: CalendarEvent): string {
@@ -9,9 +8,9 @@ function visibleSummary(event: CalendarEvent): string {
   return event.sourceName ? `[${event.sourceName}] ${title}` : title;
 }
 
-export function buildCalendar(events: CalendarEvent[]): string {
+export function buildCalendar(name: string, events: CalendarEvent[]): string {
   const calendar = icalGenerator({
-    name: getCalendarName(),
+    name,
     prodId: {
       company: "filipbodor.com",
       product: "calendar-merge"

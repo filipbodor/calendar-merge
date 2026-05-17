@@ -1,4 +1,5 @@
-import type { CalendarSource, DateRange } from "./types.js";
+import "dotenv/config";
+import type { CalendarMerge, CalendarSource, DateRange } from "./types.js";
 
 export function requiredEnv(name: string): string {
   const value = process.env[name];
@@ -24,10 +25,8 @@ function normalizeCalendarUrl(url: string): string {
   return url;
 }
 
-export function getSources(): CalendarSource[] {
-  const parsed = JSON.parse(requiredEnv("CALENDARS_JSON")) as CalendarSource[];
-
-  return parsed
+function normalizeSources(sources: CalendarSource[]): CalendarSource[] {
+  return sources
     .filter((source) => {
       if (!source.name || !source.url || !source.privacy) return false;
       return ["full", "busy", "hidden"].includes(source.privacy);
@@ -36,6 +35,24 @@ export function getSources(): CalendarSource[] {
       ...source,
       url: normalizeCalendarUrl(source.url)
     }));
+}
+
+export function getMerges(): CalendarMerge[] {
+  const parsed = JSON.parse(requiredEnv("MERGES_JSON")) as CalendarMerge[];
+
+  return parsed
+    .filter((merge) => {
+      if (!merge.name || !merge.secret || !Array.isArray(merge.calendars)) return false;
+      return Number.isFinite(merge.cacheTtlMinutes) && merge.cacheTtlMinutes > 0;
+    })
+    .map((merge) => ({
+      ...merge,
+      calendars: normalizeSources(merge.calendars)
+    }));
+}
+
+export function findMergeBySecret(secret: string): CalendarMerge | undefined {
+  return getMerges().find((merge) => merge.secret === secret);
 }
 
 export function getDateRange(): DateRange {
@@ -49,12 +66,8 @@ export function getDateRange(): DateRange {
   };
 }
 
-export function getCalendarName(): string {
-  return process.env.CALENDAR_NAME || "Merged calendar";
-}
-
-export function getCacheTtlMs(): number {
-  return numberEnv("CACHE_TTL_MINUTES", 15) * 60 * 1000;
+export function getMergeCacheTtlMs(merge: CalendarMerge): number {
+  return merge.cacheTtlMinutes * 60 * 1000;
 }
 
 export function getPort(): number {

@@ -7,6 +7,13 @@ export type CalendarSource = {
   prefix?: string;
 };
 
+export type CalendarMerge = {
+  name: string;
+  secret: string;
+  calendars: CalendarSource[];
+  cacheTtlMinutes: number;
+};
+
 export type CalendarEvent = {
   id: string;
   sourceName: string;

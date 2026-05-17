@@ -1,32 +1,33 @@
-import { getCacheTtlMs, getSources } from "./config.js";
+import { getMergeCacheTtlMs, getMerges } from "./config.js";
 import { loadEvents } from "./parseEvents.js";
 import { buildCalendar } from "./renderCalendar.js";
-import type { CacheState } from "./types.js";
+import type { CacheState, CalendarMerge } from "./types.js";
 
-let cache: CacheState | undefined;
+const cache = new Map<string, CacheState>();
 
 export function getCacheStatus() {
   return {
-    cached: Boolean(cache),
-    generatedAt: cache?.generatedAt.toISOString()
+    merges: getMerges().length,
+    cached: cache.size
   };
 }
 
-export async function getMergedCalendar(): Promise<string> {
+export async function getMergedCalendar(merge: CalendarMerge): Promise<string> {
   const now = Date.now();
-  if (cache && cache.expiresAt > now) {
-    return cache.value;
+  const cached = cache.get(merge.secret);
+
+  if (cached && cached.expiresAt > now) {
+    return cached.value;
   }
 
-  const sources = getSources();
-  const eventGroups = await Promise.all(sources.map((source) => loadEvents(source)));
-  const value = buildCalendar(eventGroups.flat());
+  const eventGroups = await Promise.all(merge.calendars.map((source) => loadEvents(source)));
+  const value = buildCalendar(merge.name, eventGroups.flat());
 
-  cache = {
+  cache.set(merge.secret, {
     value,
-    expiresAt: now + getCacheTtlMs(),
+    expiresAt: now + getMergeCacheTtlMs(merge),
     generatedAt: new Date()
-  };
+  });
 
   return value;
 }
