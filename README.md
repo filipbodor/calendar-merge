@@ -35,7 +35,7 @@ MERGES_JSON=[{"name":"Personal view","secret":"long-random-secret","cacheTtlMinu
 Each merge gets its own feed:
 
 ```txt
-https://calendar.filipbodor.com/long-random-secret.ics
+https://calendar.example.com/long-random-secret.ics
 ```
 
 Privacy modes:
@@ -43,6 +43,9 @@ Privacy modes:
 - `full`: keep title, location, and description
 - `busy`: replace title with `Busy`, remove location and description
 - `hidden`: skip the calendar
+
+See [configuration and deployment](docs/setup.md) for field descriptions, defaults,
+secret generation, and Railway visibility.
 
 ## License
 
