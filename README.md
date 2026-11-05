@@ -1,4 +1,8 @@
-# calendar-merge
+<p align="center">
+  <img src="assets/logo.png" width="180" alt="calendar-merge logo">
+</p>
+
+<h1 align="center">calendar-merge</h1>
 
 A tiny self-hosted calendar feed merger.
 
@@ -37,3 +41,7 @@ Privacy modes:
 - `full`: keep title, location, and description
 - `busy`: replace title with `Busy`, remove location and description
 - `hidden`: skip the calendar
+
+## License
+
+[MIT](LICENSE).
