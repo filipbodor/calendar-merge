@@ -10,6 +10,8 @@ It fetches private/public ICS feeds, applies simple privacy rules, and serves me
 
 ## Run locally
 
+Requires Node.js 22 or newer.
+
 ```bash
 npm install
 cp .env.example .env
@@ -45,3 +47,15 @@ Privacy modes:
 ## License
 
 [MIT](LICENSE).
+
+## Development
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+```
+
+Tests use synthetic feeds and mocked requests; no calendar credentials or network
+access are needed. CI runs on Node.js 22 and 24 in UTC and Europe/Bratislava.

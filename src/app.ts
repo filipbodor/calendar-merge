@@ -1,0 +1,32 @@
+import Fastify, { type FastifyServerOptions } from "fastify";
+import { findMergeBySecret } from "./config.js";
+import { getCacheStatus, getMergedCalendar } from "./calendarService.js";
+
+export function buildApp(options: FastifyServerOptions = { logger: true }) {
+  const app = Fastify(options);
+
+  app.get("/", async () => "calendar-merge ok\n");
+
+  app.get("/health", async () => ({
+    ok: true,
+    ...getCacheStatus()
+  }));
+
+  app.get("/:secret.ics", async (request, reply) => {
+    const { secret } = request.params as { secret: string };
+    const merge = findMergeBySecret(secret);
+
+    if (!merge) {
+      return reply.code(404).send("Not found");
+    }
+
+    const calendar = await getMergedCalendar(merge);
+
+    return reply
+      .header("content-type", "text/calendar; charset=utf-8")
+      .header("cache-control", "private, max-age=300")
+      .send(calendar);
+  });
+
+  return app;
+}

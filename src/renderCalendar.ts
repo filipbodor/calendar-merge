@@ -24,6 +24,7 @@ export function buildCalendar(name: string, events: CalendarEvent[]): string {
       id: event.id,
       start: event.start,
       end: event.end,
+      allDay: event.allDay,
       summary: visibleSummary(event),
       description: event.privacy === "full" ? event.description : undefined,
       location: event.privacy === "full" ? event.location : undefined

@@ -1,18 +1,18 @@
-import ical from "node-ical";
+import ical, { type VEvent } from "node-ical";
 import { createHash } from "node:crypto";
 import { getDateRange } from "./config.js";
 import { fetchIcs } from "./fetchIcs.js";
 import type { CalendarEvent, CalendarSource, DateRange } from "./types.js";
 
-function overlapsRange(start: Date, end: Date, range: DateRange): boolean {
-  return start <= range.to && end >= range.from;
+function textValue(value: string | { val: string } | undefined): string | undefined {
+  return typeof value === "string" ? value : value?.val;
 }
 
-function eventId(source: CalendarSource, event: ical.VEvent, start: Date, end: Date): string {
+function eventId(source: CalendarSource, event: VEvent, start: Date, end: Date): string {
   const stableInput = [
     source.name,
     event.uid ?? "",
-    event.summary ?? "",
+    textValue(event.summary) ?? "",
     start.toISOString(),
     end.toISOString()
   ].join("|");
@@ -20,57 +20,40 @@ function eventId(source: CalendarSource, event: ical.VEvent, start: Date, end: D
   return createHash("sha256").update(stableInput).digest("hex");
 }
 
-function expandEvent(
-  event: ical.VEvent,
-  source: CalendarSource,
-  range: DateRange
-): CalendarEvent[] {
-  if (!(event.start instanceof Date) || !(event.end instanceof Date)) {
-    return [];
-  }
-
-  const durationMs = event.end.getTime() - event.start.getTime();
-
-  if (!event.rrule) {
-    if (!overlapsRange(event.start, event.end, range)) return [];
-
-    return [
-      {
-        id: eventId(source, event, event.start, event.end),
-        sourceName: source.name,
-        privacy: source.privacy,
-        start: event.start,
-        end: event.end,
-        summary: event.summary,
-        description: event.description,
-        location: event.location
-      }
-    ];
-  }
-
-  const exdates = new Set(
-    Object.values(event.exdate ?? {})
-      .filter((date): date is Date => date instanceof Date)
-      .map((date) => date.toISOString().slice(0, 10))
+function calendarDate(date: Date, timeZone?: string): Date {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
   );
+  return new Date(Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)));
+}
 
-  return event.rrule
-    .between(range.from, range.to, true)
-    .filter((start) => !exdates.has(start.toISOString().slice(0, 10)))
-    .map((start) => {
-      const end = new Date(start.getTime() + durationMs);
+function expandEvent(event: VEvent, source: CalendarSource, range: DateRange): CalendarEvent[] {
+  if (!(event.start instanceof Date) || !(event.end instanceof Date)) return [];
 
-      return {
-        id: eventId(source, event, start, end),
-        sourceName: source.name,
-        privacy: source.privacy,
-        start,
-        end,
-        summary: event.summary,
-        description: event.description,
-        location: event.location
-      };
-    });
+  return ical.expandRecurringEvent(event, { ...range, expandOngoing: true }).map((instance) => {
+    // Preserve calendar dates independently of the server's timezone when rendering all-day events.
+    const zone = instance.start.tz ?? event.start.tz;
+    const start = instance.isFullDay ? calendarDate(instance.start, zone) : instance.start;
+    const end = instance.isFullDay ? calendarDate(instance.end, zone) : instance.end;
+    return {
+      id: eventId(source, instance.event, start, end),
+      sourceName: source.name,
+      privacy: source.privacy,
+      start,
+      end,
+      allDay: instance.isFullDay,
+      summary: textValue(instance.summary),
+      description: textValue(instance.event.description),
+      location: textValue(instance.event.location)
+    };
+  });
 }
 
 function blocks(raw: string, component: string): string[] {
@@ -78,7 +61,7 @@ function blocks(raw: string, component: string): string[] {
   return raw.match(pattern) ?? [];
 }
 
-function parseEvents(raw: string): ical.VEvent[] {
+function parseEvents(raw: string): VEvent[] {
   const timezoneBlocks = blocks(raw, "VTIMEZONE").join("\n");
 
   return blocks(raw, "VEVENT").flatMap((eventBlock) => {
@@ -86,7 +69,7 @@ function parseEvents(raw: string): ical.VEvent[] {
       ["BEGIN:VCALENDAR", timezoneBlocks, eventBlock, "END:VCALENDAR"].join("\n")
     );
 
-    return Object.values(parsed).filter((entry): entry is ical.VEvent => entry.type === "VEVENT");
+    return Object.values(parsed).filter((entry): entry is VEvent => entry?.type === "VEVENT");
   });
 }
 

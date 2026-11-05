@@ -20,6 +20,7 @@ export type CalendarEvent = {
   privacy: PrivacyMode;
   start: Date;
   end: Date;
+  allDay?: boolean;
   summary?: string;
   description?: string;
   location?: string;
